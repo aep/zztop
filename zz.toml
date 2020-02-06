@@ -1,0 +1,14 @@
+[project]
+version = "0.1.0"
+name = "zztop"
+cincludes = []
+cobjects = []
+pkgconfig = []
+cflags = []
+lflags = ["-lprocps"]
+
+[variants]
+default = []
+
+[dependencies]
+string = "1"

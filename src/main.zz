@@ -1,0 +1,139 @@
+using <stdio.h>::{printf};
+using <proc/readproc.h> as readproc;
+using <string.h>::{memcpy};
+using string;
+
+struct Proc {
+    int                mut pid;
+    string::String+21  mut cmd;
+    string::String+11  mut user;
+    u64                mut vmsize;
+}
+
+fn update(Proc mut * procs, usize l)
+    where len(procs) >= l
+{
+    readproc::PROCTAB mut * pt = readproc::openproc (
+        (int)readproc::PROC_FILLMEM |
+        (int)readproc::PROC_FILLCOM |
+        (int)readproc::PROC_FILLUSR
+    );
+
+    for (usize mut i = 0;i<l;i++) {
+        readproc::proc_t mut * proc = readproc::readproc(pt, 0);
+        if proc == 0 {
+            break;
+        }
+        static_attest(safe(proc));
+
+        rp_get_cmdline  (proc, &procs[i].cmd);
+        rp_get_user     (proc, &procs[i].user);
+        procs[i].pid    = rp_get_pid(proc);
+        procs[i].vmsize = rp_get_vmsize(proc);
+
+        readproc::freeproc(proc);
+    }
+
+    readproc::closeproc(pt);
+}
+
+fn bsort(Proc mut* procs, usize l)
+    where len(procs) >= l
+    where len(procs) < 10000
+{
+    bool mut swapped = true;
+    while (swapped) {
+        swapped = false;
+        for ( usize mut i = 1; i < l; i++) {
+            static_attest(i > 0); // that's a bug. ssa should know this can't overflow
+            if procs[i - 1].vmsize < procs[i].vmsize  {
+                Proc mut tmp;
+                memcpy(&tmp, &procs[i - 1],     sizeof(Proc));
+                memcpy(&procs[i - 1], &procs[i],sizeof(Proc));
+                memcpy(&procs[i], &tmp,         sizeof(Proc));
+                swapped = true;
+            }
+        }
+    }
+}
+
+fn print(Proc * procs, usize l)
+    where len(procs) >= l
+{
+    printf("   PID USER       MEM        CMD\n");
+    for (usize mut i = 0; i < l; i++) {
+        printf("% 6d %.*s %-10d %.*s\n",
+            procs[i].pid,
+            procs[i].user.len, procs[i].user.mem,
+            procs[i].vmsize / 1024,
+            procs[i].cmd.len, procs[i].cmd.mem
+        );
+    }
+}
+
+
+export fn main() -> int {
+    Proc mut display[200] = {0};
+    update(display, static(len(display)));
+    bsort(display, static(len(display)));
+    print(display, 10);
+
+
+    return 0;
+}
+
+
+
+
+
+
+
+// this is the ugly part don't look
+// it will go away once unsafe expressions can be inlined
+
+
+fn rp_get_pid(readproc::proc_t * p) -> int  {
+    unsafe {
+        return p->tid;
+    }
+}
+
+fn rp_get_vmsize(readproc::proc_t * p) -> u64  {
+    unsafe {
+        return p->size;
+    }
+}
+
+fn rp_get_cmdline(readproc::proc_t *p, string::String+st mut *to)
+    where st > 2
+{
+    char * mut x;
+    unsafe {
+        if p->cmdline == 0 {
+            return;
+        }
+        x = p->cmdline[0];
+    }
+    static_attest(nullterm(x));
+    static_attest(safe(x));
+    to->append_cstr(x);
+    while to->len < st - 1 {
+        to->push(' ');
+    }
+}
+
+fn rp_get_user(readproc::proc_t *p, string::String+st mut *to)
+    where st > 2
+{
+    char * mut x;
+    unsafe {
+        x = p->euser;
+    }
+    static_attest(nullterm(x));
+    static_attest(safe(x));
+    to->append_cstr(x);
+
+    while to->len < st - 1{
+        to->push(' ');
+    }
+}
